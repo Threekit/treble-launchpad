@@ -16,6 +16,6 @@ app.get("/api/health", (req, res) => {
   res.status(200).send({ message: "server healthy!" });
 });
 
-app.use("/", express.static(path.join(__dirname, "builds")));
+app.use("/", express.static(path.join(__dirname, "build")));
 
 app.listen(PORT, () => console.log("listening on port: ", PORT));
