@@ -1,0 +1,4 @@
+ingress:
+  custom_domain: true
+  hosts:
+    - 3kit.com
