@@ -19,11 +19,11 @@ app.get("/api/health", (req, res) => {
 
 app.use((req, res, next) => {
   const env = req.hostname.split(".3kit")[0].split(".")[1];
-  express.static(path.join(__dirname, `build/${env}`))(req, res, next);
+  express.static(path.join(__dirname, "build", env))(req, res, next);
 });
 app.get("*", (req, res) => {
   const env = req.hostname.split(".3kit")[0].split(".")[1];
-  res.sendFile(path.join(__dirname, `build/${env}`));
+  res.sendFile(path.join(__dirname, "build", env, "index.html"));
 });
 
 app.listen(PORT, () => console.log("listening on port: ", PORT));
