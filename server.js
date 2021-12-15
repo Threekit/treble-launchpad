@@ -19,11 +19,13 @@ app.get("/api/health", (req, res) => {
   res.status(200).send({ message: "server healthy!" });
 });
 
-app.use((req, res, next) => {
+app.use("/", (req, res, next) => {
   console.log(req.hostname);
+  console.log("handling request");
   const env = req.hostname.split(".3kit")[0].split(".")[1];
   express.static(path.join(__dirname, "build", env))(req, res, next);
 });
+
 app.get("*", (req, res) => {
   console.log(req.hostname);
   const env = req.hostname.split(".3kit")[0].split(".")[1];
