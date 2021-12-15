@@ -17,10 +17,13 @@ app.get("/api/health", (req, res) => {
   res.status(200).send({ message: "server healthy!" });
 });
 
-app.use("*", (req, res, next) => {
-  // const hostname = "humantouch.dev.3kit.com";
+app.use((req, res, next) => {
   const env = req.hostname.split(".3kit")[0].split(".")[1];
   express.static(path.join(__dirname, `build/${env}`))(req, res, next);
+});
+app.get("*", (req, res) => {
+  const env = req.hostname.split(".3kit")[0].split(".")[1];
+  res.sendFile(path.join(__dirname, `build/${env}`));
 });
 
 app.listen(PORT, () => console.log("listening on port: ", PORT));
