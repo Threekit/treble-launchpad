@@ -6,7 +6,7 @@ const { updateCatalogThumbnails } = require("./utils");
 
 const app = express();
 
-const PORT = 80;
+const PORT = 4000;
 
 app.use(morgan("tiny"));
 app.use(express.json());
@@ -17,22 +17,10 @@ app.get("/api/health", (req, res) => {
   res.status(200).send({ message: "server healthy!" });
 });
 
-app.post("/api/hook", async (req, res) => {
-  if (!req.body.data.title.includes("_thumbnail"))
-    return res.status(200).json({
-      message: `Renders Ignored: Title did not include '_thumbnail'.`,
-    });
-
-  const catalog = await updateCatalogThumbnails(req.body.data);
-
-  const productsList = catalog.products.map((el) => el.name);
-
-  res.status(200).json({
-    message: `Updated ${catalog.products.length} products listed below.`,
-    products: productsList,
-  });
+app.use("*", (req, res, next) => {
+  // const hostname = "humantouch.dev.3kit.com";
+  const env = req.hostname.split(".3kit")[0].split(".")[1];
+  express.static(path.join(__dirname, `build/${env}`))(req, res, next);
 });
-
-app.use("/", express.static(path.join(__dirname, "build")));
 
 app.listen(PORT, () => console.log("listening on port: ", PORT));
