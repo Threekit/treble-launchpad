@@ -8,7 +8,7 @@ const app = express();
 
 const PORT = 80;
 
-app.use(morgan("tiny"));
+app.use(morgan("dev"));
 app.use(express.json());
 app.use(cors());
 app.use(express.urlencoded());
