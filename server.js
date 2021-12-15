@@ -6,7 +6,7 @@ const { updateCatalogThumbnails } = require("./utils");
 
 const app = express();
 
-const PORT = 4000;
+const PORT = 80;
 
 app.use(morgan("tiny"));
 app.use(express.json());
