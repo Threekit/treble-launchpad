@@ -176,12 +176,6 @@ jobs:
       - name: Cleanup main
         run: rm -rf .github/workflows/treble-launchpad.yml
 
-      - name: Adds new actions
-        run: mv -f ./.github/workflows/launchpad-dev.yml ./.github/workflows/launchpad-prod.yml .github/workflows
-
-      - name: Adds readme
-        run: mv -f ./TREBLE_LAUNCHPAD.md ./.github/workflows/launchpad-prod.yml .github/workflows
-
       - name: Readme updates
         run: |
           mv -f ./.github/workflows/TREBLE_LAUNCHPAD.md ./TREBLE_LAUNCHPAD.md \
