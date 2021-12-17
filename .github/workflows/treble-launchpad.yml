@@ -1,0 +1,200 @@
+name: Init Project
+
+on:
+  push:
+    branch: main
+
+jobs:
+  build-react:
+    name: Builds Main React app
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.repository.name, 'project--') }}
+    outputs:
+      project_name: ${{ steps.credentials-setup.outputs.project_name }}
+    steps:
+      - id: credentials-setup
+        name: Setup project name variable
+        run: |
+          echo "::set-output name=project_name::$(repoName=${{ github.event.repository.name }} && echo "${repoName/"project--"/""}")"
+      # Install Node.js
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "16"
+
+      # Checkout branch
+      - uses: actions/checkout@v2
+      - run: yarn
+      - run: yarn build --preview
+        env:
+          THREEKIT_PREVIEW_ASSET_ID: ${{ secrets.THREEKIT_PREVIEW_ASSET_ID }}
+          THREEKIT_PREVIEW_STAGE_ID: ${{ secrets.THREEKIT_PREVIEW_STAGE_ID }}
+          THREEKIT_PREVIEW_ORG_ID: ${{ secrets.THREEKIT_PREVIEW_ORG_ID }}
+          THREEKIT_PREVIEW_PUBLIC_TOKEN: ${{ secrets.THREEKIT_PREVIEW_PUBLIC_TOKEN }}
+          # THREEKIT_ADMIN_FTS_ASSET_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ASSET_ID }}
+          # THREEKIT_ADMIN_FTS_STAGE_ID: ${{ secrets.THREEKIT_ADMIN_FTS_STAGE_ID }}
+          # THREEKIT_ADMIN_FTS_ORG_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ORG_ID }}
+          # THREEKIT_ADMIN_FTS_PUBLIC_TOKEN: ${{ secrets.THREEKIT_ADMIN_FTS_PUBLIC_TOKEN }}
+
+      - name: Create build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-dir
+          path: build
+          retention-days: 5
+
+  deploy-prod:
+    name: Build and deploy Prod Docker image
+    needs: build-react
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--prod
+    steps:
+      - name: Login
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_email: ${{ secrets.GCP_EMAIL }}
+          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
+      - name: Checks out Threekit/treble-launchpad
+        uses: actions/checkout@v2
+        with:
+          repository: Threekit/treble-launchpad
+          ref: launchpad-prod
+
+      - name: Update porter.yaml
+        uses: fjogeleit/yaml-update-action@master
+        with:
+          valueFile: "porter.yaml"
+          propertyPath: "ingress.hosts.0"
+          value: ${{ needs.build-react.outputs.project_name }}.3kit.com
+          commitChange: false
+          updateFile: true
+
+      - name: Download a build artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir
+          path: build
+
+      - name: Build Docker image
+        run: docker build . -t $IMAGE_NAME
+
+      - name: Push Docker image
+        run: docker push $IMAGE_NAME
+
+      - name: Create Porter web app
+        uses: porter-dev/porter-cli-action@v0.1.0
+        with:
+          command: create web --app ${{ github.event.repository.name }}--prod --namespace ${{ secrets.PORTER_NAMESPACE }} --source registry --values ./porter.yaml --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--prod:latest
+        env:
+          PORTER_HOST: https://dashboard.getporter.dev
+          PORTER_CLUSTER: ${{ secrets.PORTER_CLUSTER_ID }}
+          PORTER_PROJECT: ${{ secrets.PORTER_PROJECT_ID }}
+          PORTER_TOKEN: ${{ secrets.PORTER_TOKEN }}
+
+  deploy-dev:
+    name: Build and deploy Dev Docker image
+    needs: build-react
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--dev
+    steps:
+      - name: Login
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_email: ${{ secrets.GCP_EMAIL }}
+          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
+      - name: Checks out Threekit/treble-launchpad
+        uses: actions/checkout@v2
+        with:
+          repository: Threekit/treble-launchpad
+          ref: launchpad-dev
+
+      - name: Update porter.yaml
+        uses: fjogeleit/yaml-update-action@master
+        with:
+          valueFile: "porter.yaml"
+          propertyPath: "ingress.hosts.0"
+          value: ${{ needs.build-react.outputs.project_name }}.dev.3kit.com
+          commitChange: false
+          updateFile: true
+
+      - name: Update porter.yaml
+        uses: fjogeleit/yaml-update-action@master
+        with:
+          valueFile: "porter.yaml"
+          propertyPath: "ingress.hosts.1"
+          value: ${{ needs.build-react.outputs.project_name }}.staging.3kit.com
+          commitChange: false
+          updateFile: true
+
+      - name: Download a build artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir
+          path: build/dev
+
+      - name: Download a build artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build-dir
+          path: build/staging
+
+      - name: Build Docker image
+        run: docker build . -t $IMAGE_NAME
+
+      - name: Push Docker image
+        run: docker push $IMAGE_NAME
+
+      - name: Create Porter web app
+        uses: porter-dev/porter-cli-action@v0.1.0
+        with:
+          command: create web --app ${{ github.event.repository.name }}--dev --namespace ${{ secrets.PORTER_NAMESPACE }} --source registry --values ./porter.yaml --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--dev:latest
+        env:
+          PORTER_HOST: https://dashboard.getporter.dev
+          PORTER_CLUSTER: ${{ secrets.PORTER_CLUSTER_ID }}
+          PORTER_PROJECT: ${{ secrets.PORTER_PROJECT_ID }}
+          PORTER_TOKEN: ${{ secrets.PORTER_TOKEN }}
+
+  prep-repo:
+    name: Prep repo
+    needs: build-react
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v2
+
+      - name: Cleanup main
+        run: rm -rf .github/workflows/treble-launchpad.yml
+
+      - name: Adds new actions
+        run: mv -f ./.github/workflows/launchpad-dev.yml ./.github/workflows/launchpad-prod.yml .github/workflows
+
+      - name: Adds readme
+        run: mv -f ./TREBLE_LAUNCHPAD.md ./.github/workflows/launchpad-prod.yml .github/workflows
+
+      - name: Readme updates
+        run: |
+          mv -f ./.github/workflows/TREBLE_LAUNCHPAD.md ./TREBLE_LAUNCHPAD.md \
+          && sed -i -e 's/%REPO_NAME%/${{ github.event.repository.name }}/g' ./TREBLE_LAUNCHPAD.md \
+          && sed -i -e 's/%PROJECT_NAME%/${{ needs.build-react.outputs.project_name }}/g' ./TREBLE_LAUNCHPAD.md \
+      - name: Commit files to main
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Template cleanup"
+      - name: Push changes to main
+        uses: ad-m/github-push-action@master
+        with:
+          branch: main
+          github_token: ${{ secrets.GITHUB_TOKEN }}

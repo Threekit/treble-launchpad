@@ -1,0 +1,93 @@
+on:
+  push:
+    branches:
+      - staging
+      - dev
+
+name: Deploy Dev Branches
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.repository.name, 'project--') }}
+    strategy:
+      matrix:
+        env: [dev, staging]
+    steps:
+      # Install Node.js
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "16"
+
+      # Checkout branch
+      - uses: actions/checkout@v2
+        with:
+          ref: ${{ matrix.env }}
+          # Put the checked out files inside the `build/<branch-name>` folder
+          path: app
+      - run: yarn
+        working-directory: app
+      - run: yarn build --preview
+        working-directory: app
+        env:
+          THREEKIT_PREVIEW_ASSET_ID: ${{ secrets.THREEKIT_PREVIEW_ASSET_ID }}
+          THREEKIT_PREVIEW_STAGE_ID: ${{ secrets.THREEKIT_PREVIEW_STAGE_ID }}
+          THREEKIT_PREVIEW_ORG_ID: ${{ secrets.THREEKIT_PREVIEW_ORG_ID }}
+          THREEKIT_PREVIEW_PUBLIC_TOKEN: ${{ secrets.THREEKIT_PREVIEW_PUBLIC_TOKEN }}
+          THREEKIT_ADMIN_FTS_ASSET_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ASSET_ID }}
+          THREEKIT_ADMIN_FTS_STAGE_ID: ${{ secrets.THREEKIT_ADMIN_FTS_STAGE_ID }}
+          THREEKIT_ADMIN_FTS_ORG_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ORG_ID }}
+          THREEKIT_ADMIN_FTS_PUBLIC_TOKEN: ${{ secrets.THREEKIT_ADMIN_FTS_PUBLIC_TOKEN }}
+
+      - run: mkdir -p build/${{ matrix.env }} && mv -v app/build/* build/${{ matrix.env }}
+
+      - name: Create build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ matrix.env }}
+          path: build/${{ matrix.env }}
+          retention-days: 5
+
+  deploy:
+    name: Build, Push and Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--dev
+    steps:
+      - name: Login
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_email: ${{ secrets.GCP_EMAIL }}
+          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
+      - name: Checks out Threekit/treble-launchpad
+        uses: actions/checkout@v2
+        with:
+          repository: Threekit/treble-launchpad
+          ref: launchpad-dev
+
+      - name: Download a build artifact
+        uses: actions/download-artifact@v2
+        with:
+          path: build
+
+      - name: Build Docker image
+        run: docker build . -t $IMAGE_NAME
+
+      - name: Push Docker image
+        run: docker push $IMAGE_NAME
+
+      - name: Update Porter app
+        uses: porter-dev/porter-cli-action@v0.1.0
+        with:
+          command: update config --app ${{ github.event.repository.name }}--dev --tag latest --namespace ${{ secrets.PORTER_NAMESPACE }}
+        env:
+          PORTER_HOST: https://dashboard.getporter.dev
+          PORTER_CLUSTER: ${{ secrets.PORTER_CLUSTER_ID }}
+          PORTER_PROJECT: ${{ secrets.PORTER_PROJECT_ID }}
+          PORTER_TOKEN: ${{ secrets.PORTER_TOKEN }}
