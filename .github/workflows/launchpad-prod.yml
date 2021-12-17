@@ -1,0 +1,85 @@
+on:
+  push:
+    branches:
+      - prod
+
+name: Deploy Prod
+
+jobs:
+  build:
+    name: Builds prod
+    runs-on: ubuntu-latest
+    if: ${{ contains(github.event.repository.name, 'project--') }}
+    steps:
+      # Install Node.js
+      - uses: actions/setup-node@v2-beta
+        with:
+          node-version: "16"
+
+      # Checkout branch
+      - uses: actions/checkout@v2
+        with:
+          ref: prod
+      - run: yarn
+      - run: yarn build --admin-fts
+        env:
+          THREEKIT_PREVIEW_ASSET_ID: ${{ secrets.THREEKIT_PREVIEW_ASSET_ID }}
+          THREEKIT_PREVIEW_STAGE_ID: ${{ secrets.THREEKIT_PREVIEW_STAGE_ID }}
+          THREEKIT_PREVIEW_ORG_ID: ${{ secrets.THREEKIT_PREVIEW_ORG_ID }}
+          THREEKIT_PREVIEW_PUBLIC_TOKEN: ${{ secrets.THREEKIT_PREVIEW_PUBLIC_TOKEN }}
+          THREEKIT_ADMIN_FTS_ASSET_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ASSET_ID }}
+          THREEKIT_ADMIN_FTS_STAGE_ID: ${{ secrets.THREEKIT_ADMIN_FTS_STAGE_ID }}
+          THREEKIT_ADMIN_FTS_ORG_ID: ${{ secrets.THREEKIT_ADMIN_FTS_ORG_ID }}
+          THREEKIT_ADMIN_FTS_PUBLIC_TOKEN: ${{ secrets.THREEKIT_ADMIN_FTS_PUBLIC_TOKEN }}
+
+      - name: Create build artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: build-prod
+          path: build
+          retention-days: 5
+
+  deploy:
+    name: Build and deploy Prod
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ github.event.repository.name }}--prod
+    steps:
+      - name: Login
+        uses: google-github-actions/setup-gcloud@master
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_email: ${{ secrets.GCP_EMAIL }}
+          service_account_key: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker --quiet
+
+      - name: Checks out Threekit/treble-launchpad
+        uses: actions/checkout@v2
+        with:
+          repository: Threekit/treble-launchpad
+          ref: launchpad-prod
+
+      - name: Download a build artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build-prod
+          path: build
+
+      - name: Build Docker image
+        run: docker build . -t $IMAGE_NAME
+
+      - name: Push Docker image
+        run: docker push $IMAGE_NAME
+
+      - name: Update Porter app
+        uses: porter-dev/porter-cli-action@v0.1.0
+        with:
+          command: update config --app ${{ github.event.repository.name }}--prod --tag latest --namespace ${{ secrets.PORTER_NAMESPACE }}
+        env:
+          PORTER_HOST: https://dashboard.getporter.dev
+          PORTER_CLUSTER: ${{ secrets.PORTER_CLUSTER_ID }}
+          PORTER_PROJECT: ${{ secrets.PORTER_PROJECT_ID }}
+          PORTER_TOKEN: ${{ secrets.PORTER_TOKEN }}

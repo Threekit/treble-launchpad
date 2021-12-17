@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const path = require("path");
-const { updateCatalogThumbnails } = require("./utils");
+// const { updateCatalogThumbnails } = require("./utils");
 
 const app = express();
 
